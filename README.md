@@ -1,3 +1,3 @@
-# mediscan
+# Mediscan
 ## Problem statement
 Healthcare systems operate on fragmented and heterogeneous medical records, including handwritten prescriptions, printed reports, and unstructured digital documents. This fragmentation results in poor accessibility of patient information, increased risk of data inconsistency, and delays in clinical decision-making. Existing approaches rely heavily on manual digitization methods such as scanning and data entry, which are time-consuming, error-prone, and incapable of extracting structured and usable medical data efficiently. Consequently, there is a critical need for an intelligent and automated system that can transform unstructured medical records into structured, unified, and accessible patient health information within a centralized framework.
