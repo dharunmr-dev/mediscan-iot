@@ -3,7 +3,8 @@
 Healthcare systems operate on fragmented and heterogeneous medical records, including handwritten prescriptions, printed reports, and unstructured digital documents. This fragmentation results in poor accessibility of patient information, increased risk of data inconsistency, and delays in clinical decision-making. Existing approaches rely heavily on manual digitization methods such as scanning and data entry, which are time-consuming, error-prone, and incapable of extracting structured and usable medical data efficiently. Consequently, there is a critical need for an intelligent and automated system that can transform unstructured medical records into structured, unified, and accessible patient health information within a centralized framework.
 
 ## Architecture diagram <!-- set width = 800, height = 1200 -->
-<img width="800" height="1200" alt="arch-diagram-v1 1-dark" src="https://github.com/user-attachments/assets/dd1d4925-afbd-43b7-ab66-5b20e3fc2218" />
+<img width="800" height="1200" alt="image" src="https://github.com/user-attachments/assets/0a8931af-ad28-4511-b72e-7ff8c183ab00" />
+
 
 
 
