@@ -175,6 +175,74 @@ When extracting prescriptions, patient info (name, age, gender) is automatically
 - `upload` - Manual upload via API
 - `ip_webcam` - Captured from IP Webcam
 
+## Patient Management Workflows
+
+### Workflow 1: Auto-Create from Prescription
+
+When uploading a prescription WITHOUT providing a patient_id, the system:
+1. Extracts patient info (name, age, gender) using AI from the prescription image
+2. Creates new patient automatically in the database
+3. Links the prescription to that new patient
+
+```bash
+# No patient_id - system auto-creates patient
+curl -X POST "http://localhost:8000/api/extract-prescription/{image_id}"
+
+# Response includes auto-created patient_id
+```
+
+This is useful when you want the AI to extract patient information directly from the prescription.
+
+---
+
+### Workflow 2: Manual Patient → Prescription Link (Recommended for Accuracy)
+
+For accurate patient data, create the patient manually first, then link prescriptions:
+
+```bash
+# Step 1: Create patient manually (avoid AI extraction errors)
+curl -X POST http://localhost:8000/api/patients \
+  -H "Content-Type: application/json" \
+  -d '{"name": "John Doe", "age": 30, "gender": "male", "phone": "1234567890"}'
+
+# Response: {"id": "abc-123", "name": "John Doe", ...}
+# Note the patient_id (e.g., "abc-123")
+
+# Step 2: Upload prescription image
+curl -X POST http://localhost:8000/api/images/upload -F "file=@prescription.jpg"
+# Response: {"id": "xyz-789", ...}
+
+# Step 3: Extract prescription and link to existing patient
+curl -X POST "http://localhost:8000/api/extract-prescription/xyz-789?patient_id=abc-123"
+```
+
+**Benefits:**
+- Patient data is accurate (manually entered)
+- No duplicate patients created
+- Prescriptions correctly linked to patient
+- Avoids name matching issues (e.g., "John Doe" vs "John")
+
+---
+
+### Workflow 3: Update Patient from Prescription
+
+If a patient exists but prescription has updated information:
+
+```bash
+# Step 1: Create patient
+curl -X POST http://localhost:8000/api/patients \
+  -H "Content-Type: application/json" \
+  -d '{"name": "John Doe", "age": 30}'
+
+# Step 2: Extract with patient_id
+curl -X POST "http://localhost:8000/api/extract-prescription/{image_id}?patient_id={patient_id}"
+
+# Step 3: If needed, update patient with extracted info
+curl -X PATCH http://localhost:8000/api/patients/{patient_id} \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "9876543210", "age": 31}'
+```
+
 ## Database
 
 The backend uses SQLite. Database is automatically created on first run.
