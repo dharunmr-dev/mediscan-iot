@@ -14,23 +14,43 @@ class ExtractRequest(BaseModel):
 
 class ExtractResponse(BaseModel):
     success: bool
-    extracted_text: str | None = None
-    medicines: list | None = None
+    patient_name: str | None = None
+    patient_age: int | None = None
+    patient_gender: str | None = None
+    patient_phone: str | None = None
+    outpatient_no: str | None = None
+    diagnosis: str | None = None
+    date: str | None = None
+    doctor: str | None = None
+    medicines: str | None = None
     dosage: str | None = None
     instructions: str | None = None
-    diagnosed_by: str | None = None
+    extracted_text: str | None = None
     raw_response: str | None = None
     error: str | None = None
 
 
-PROMPT = """Extract all text from the doctor prescription in the image and give the output in JSON format with the following fields:
-- medicines: list of medicines mentioned
-- dosage: dosage instructions if any
-- instructions: other instructions from doctor
-- diagnosed_by: doctor name if mentioned
-- extracted_text: all raw text from prescription
+PROMPT = """Extract structured JSON from this prescription image:
 
-Return only valid JSON, no other text."""
+{
+  "patient": {
+    "name": "Patient's full name",
+    "age": number,
+    "gender": "male/female/other",
+    "phone": "phone number if available",
+    "outpatient_no": "outpatient number if available"
+  },
+  "prescription": {
+    "date": "prescription date if available",
+    "diagnosis": "diagnosis or condition",
+    "medicines": [
+      {"name": "medicine name", "dosage": "dosage like 1-0-1", "duration": "duration like 1 month"}
+    ],
+    "doctor": "doctor name"
+  }
+}
+
+Return ONLY valid JSON, no markdown, no text before or after."""
 
 
 MODEL_NAME = os.environ.get("AI_MODEL", "mlx-community/Qwen3.5-9B-MLX-4bit")
@@ -84,7 +104,6 @@ async def extract_prescription(request: ExtractRequest):
 
         raw_response = result.strip()
 
-        parsed = None
         try:
             if "```json" in raw_response:
                 json_str = raw_response.split("```json")[1].split("```")[0]
@@ -95,28 +114,72 @@ async def extract_prescription(request: ExtractRequest):
 
             parsed = json.loads(json_str.strip())
 
-            medicines = parsed.get("medicines", [])
-            dosage = parsed.get("dosage", "")
-            instructions = parsed.get("instructions", "")
-            diagnosed_by = parsed.get("diagnosed_by", "")
-            extracted_text = parsed.get("extracted_text", raw_response)
+            patient_data = parsed.get("patient", {})
+            prescription_data = parsed.get("prescription", {})
+
+            def to_string(value):
+                if isinstance(value, list):
+                    return ", ".join(str(v) for v in value)
+                return str(value) if value else ""
+
+            def to_int(value):
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, str):
+                    try:
+                        return int(value)
+                    except:
+                        return None
+                return None
+
+            patient_name = to_string(patient_data.get("name"))
+            patient_age = to_int(patient_data.get("age"))
+            patient_gender = to_string(patient_data.get("gender"))
+            patient_phone = to_string(patient_data.get("phone"))
+            outpatient_no = to_string(patient_data.get("outpatient_no"))
+
+            diagnosis = to_string(prescription_data.get("diagnosis"))
+            doctor = to_string(prescription_data.get("doctor"))
+            date = to_string(prescription_data.get("date"))
+
+            medicines_list = prescription_data.get("medicines", [])
+            if isinstance(medicines_list, list):
+                medicines_json = json.dumps(medicines_list)
+            else:
+                medicines_json = "[]"
+
+            dosage_list = [
+                m.get("dosage", "") for m in medicines_list if isinstance(m, dict)
+            ]
+            dosage = ", ".join([d for d in dosage_list if d])
+
+            instructions_list = [
+                m.get("duration", "") for m in medicines_list if isinstance(m, dict)
+            ]
+            instructions = ", ".join([i for i in instructions_list if i])
+
+            return ExtractResponse(
+                success=True,
+                patient_name=patient_name,
+                patient_age=patient_age,
+                patient_gender=patient_gender,
+                patient_phone=patient_phone,
+                outpatient_no=outpatient_no,
+                diagnosis=diagnosis,
+                date=date,
+                doctor=doctor,
+                medicines=medicines_json,
+                dosage=dosage,
+                instructions=instructions,
+                raw_response=raw_response,
+            )
 
         except json.JSONDecodeError:
-            extracted_text = raw_response
-            medicines = []
-            dosage = ""
-            instructions = ""
-            diagnosed_by = ""
-
-        return ExtractResponse(
-            success=True,
-            extracted_text=extracted_text,
-            medicines=medicines if isinstance(medicines, list) else [],
-            dosage=dosage,
-            instructions=instructions,
-            diagnosed_by=diagnosed_by,
-            raw_response=raw_response,
-        )
+            return ExtractResponse(
+                success=True,
+                extracted_text=raw_response,
+                raw_response=raw_response,
+            )
 
     except Exception as e:
         return ExtractResponse(

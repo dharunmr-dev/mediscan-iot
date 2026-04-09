@@ -1,4 +1,4 @@
-import subprocess
+import aiohttp
 import json
 import os
 from typing import Optional
@@ -37,130 +37,126 @@ async def extract_prescription(
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    cmd = [
-        "mlx_vlm.generate",
-        "--model",
-        settings.ai_model,
-        "--prompt",
-        PROMPT,
-        "--image",
-        image_path,
-        "--max-tokens",
-        str(settings.ai_max_tokens),
-    ]
-
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=settings.ai_timeout,
-            env={
-                **os.environ,
-                "PATH": f"/Users/dharunmr/mediscan-iot/backend/env/bin:{os.environ.get('PATH', '')}",
-            },
-        )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{settings.ai_server_url}/extract",
+                json={"image_path": image_path},
+                timeout=aiohttp.ClientTimeout(total=settings.ai_timeout),
+            ) as response:
+                if response.status != 200:
+                    result = await response.json()
+                    return {
+                        "success": False,
+                        "error": result.get("error", "AI extraction failed"),
+                    }
 
-        if result.returncode != 0:
-            return {
-                "success": False,
-                "error": result.stderr or "Command failed",
-            }
+                ai_result = await response.json()
 
-        raw_output = result.stdout.strip()
+                if not ai_result.get("success"):
+                    return {
+                        "success": False,
+                        "error": ai_result.get("error", "AI extraction failed"),
+                    }
 
-        try:
-            if "```json" in raw_output:
-                json_str = raw_output.split("```json")[1].split("```")[0]
-            elif "```" in raw_output:
-                json_str = raw_output.split("```")[1].split("```")[0]
-            else:
-                json_str = raw_output
+                raw_output = ai_result.get("raw_response", "")
 
-            parsed = json.loads(json_str.strip())
+                try:
+                    if "```json" in raw_output:
+                        json_str = raw_output.split("```json")[1].split("```")[0]
+                    elif "```" in raw_output:
+                        json_str = raw_output.split("```")[1].split("```")[0]
+                    else:
+                        json_str = raw_output
 
-            patient_data = parsed.get("patient", {})
-            prescription_data = parsed.get("prescription", {})
+                    parsed = json.loads(json_str.strip())
 
-            def to_string(value):
-                if isinstance(value, list):
-                    return ", ".join(str(v) for v in value)
-                return str(value) if value else ""
+                    patient_data = parsed.get("patient", {})
+                    prescription_data = parsed.get("prescription", {})
 
-            def to_int(value):
-                if isinstance(value, int):
-                    return value
-                if isinstance(value, str):
-                    try:
-                        return int(value)
-                    except:
+                    def to_string(value):
+                        if isinstance(value, list):
+                            return ", ".join(str(v) for v in value)
+                        return str(value) if value else ""
+
+                    def to_int(value):
+                        if isinstance(value, int):
+                            return value
+                        if isinstance(value, str):
+                            try:
+                                return int(value)
+                            except:
+                                return None
                         return None
-                return None
 
-            patient_name = to_string(patient_data.get("name"))
-            patient_age = to_int(patient_data.get("age"))
-            patient_gender = to_string(patient_data.get("gender"))
-            patient_phone = to_string(patient_data.get("phone"))
-            outpatient_no = to_string(patient_data.get("outpatient_no"))
+                    patient_name = to_string(patient_data.get("name"))
+                    patient_age = to_int(patient_data.get("age"))
+                    patient_gender = to_string(patient_data.get("gender"))
+                    patient_phone = to_string(patient_data.get("phone"))
+                    outpatient_no = to_string(patient_data.get("outpatient_no"))
 
-            diagnosis = to_string(prescription_data.get("diagnosis"))
-            doctor = to_string(prescription_data.get("doctor"))
-            date = to_string(prescription_data.get("date"))
+                    diagnosis = to_string(prescription_data.get("diagnosis"))
+                    doctor = to_string(prescription_data.get("doctor"))
+                    date = to_string(prescription_data.get("date"))
 
-            medicines_list = prescription_data.get("medicines", [])
-            if isinstance(medicines_list, list):
-                medicines_json = json.dumps(medicines_list)
-            else:
-                medicines_json = "[]"
+                    medicines_list = prescription_data.get("medicines", [])
+                    if isinstance(medicines_list, list):
+                        medicines_json = json.dumps(medicines_list)
+                    else:
+                        medicines_json = "[]"
 
-            dosage_list = [
-                m.get("dosage", "") for m in medicines_list if isinstance(m, dict)
-            ]
-            dosage = ", ".join([d for d in dosage_list if d])
+                    dosage_list = [
+                        m.get("dosage", "")
+                        for m in medicines_list
+                        if isinstance(m, dict)
+                    ]
+                    dosage = ", ".join([d for d in dosage_list if d])
 
-            instructions_list = [
-                m.get("duration", "") for m in medicines_list if isinstance(m, dict)
-            ]
-            instructions = ", ".join([i for i in instructions_list if i])
+                    instructions_list = [
+                        m.get("duration", "")
+                        for m in medicines_list
+                        if isinstance(m, dict)
+                    ]
+                    instructions = ", ".join([i for i in instructions_list if i])
 
-            return {
-                "success": True,
-                "patient_name": patient_name,
-                "patient_age": patient_age,
-                "patient_gender": patient_gender,
-                "patient_phone": patient_phone,
-                "outpatient_no": outpatient_no,
-                "diagnosis": diagnosis,
-                "date": date,
-                "doctor": doctor,
-                "medicines": medicines_json,
-                "dosage": dosage,
-                "instructions": instructions,
-                "raw_response": raw_output,
-            }
+                    return {
+                        "success": True,
+                        "patient_name": patient_name,
+                        "patient_age": patient_age,
+                        "patient_gender": patient_gender,
+                        "patient_phone": patient_phone,
+                        "outpatient_no": outpatient_no,
+                        "diagnosis": diagnosis,
+                        "date": date,
+                        "doctor": doctor,
+                        "medicines": medicines_json,
+                        "dosage": dosage,
+                        "instructions": instructions,
+                        "raw_response": raw_output,
+                    }
 
-        except json.JSONDecodeError:
-            return {
-                "success": True,
-                "extracted_text": raw_output,
-                "patient_name": "",
-                "patient_age": None,
-                "patient_gender": "",
-                "patient_phone": "",
-                "outpatient_no": "",
-                "diagnosis": "",
-                "date": "",
-                "doctor": "",
-                "medicines": "[]",
-                "dosage": "",
-                "instructions": "",
-                "raw_response": raw_output,
-            }
+                except json.JSONDecodeError:
+                    return {
+                        "success": True,
+                        "extracted_text": raw_output,
+                        "patient_name": "",
+                        "patient_age": None,
+                        "patient_gender": "",
+                        "patient_phone": "",
+                        "outpatient_no": "",
+                        "diagnosis": "",
+                        "date": "",
+                        "doctor": "",
+                        "medicines": "[]",
+                        "dosage": "",
+                        "instructions": "",
+                        "raw_response": raw_output,
+                    }
 
-    except subprocess.TimeoutExpired:
+    except aiohttp.ClientError as e:
         return {
             "success": False,
-            "error": f"AI extraction timed out after {settings.ai_timeout}s",
+            "error": f"Failed to connect to AI server: {str(e)}",
         }
     except Exception as e:
         return {
