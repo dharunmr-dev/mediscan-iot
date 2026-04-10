@@ -1,10 +1,7 @@
-from contextlib import asynccontextmanager
 import os
-import json
-from fastapi import FastAPI, HTTPException
+import subprocess
+from fastapi import FastAPI
 from pydantic import BaseModel
-from mlx_vlm import generate
-from mlx_vlm.utils import load_image, load
 
 
 class ExtractRequest(BaseModel):
@@ -22,68 +19,69 @@ MODEL_NAME = os.environ.get("AI_MODEL", "mlx-community/Qwen3.5-9B-MLX-4bit")
 MAX_TOKENS = int(os.environ.get("AI_MAX_TOKENS", "10000"))
 PORT = int(os.environ.get("AI_PORT", "8001"))
 
-model = None
-processor = None
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global model, processor
-    print(f"Loading model: {MODEL_NAME}...")
-    model, processor = load(MODEL_NAME)
-    print(f"Model loaded successfully!")
-    print(f"Will listen on port: {PORT}")
-    yield
+MEDIScan_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MLX_BIN_PATH = os.path.join(MEDIScan_ROOT, "backend", "env", "bin")
 
 
 app = FastAPI(
     title="Mediscan AI Server",
-    description="MLX-VLM wrapper for prescription extraction",
+    description="MLX-VLM CLI wrapper for prescription extraction",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 
 @app.post("/extract", response_model=ExtractResponse)
 async def extract_prescription(request: ExtractRequest):
-    global model, processor
-
     if not os.path.exists(request.image_path):
-        raise HTTPException(
-            status_code=400, detail=f"Image not found: {request.image_path}"
+        return ExtractResponse(
+            success=False, error=f"Image not found: {request.image_path}"
         )
-
-    if model is None or processor is None:
-        raise HTTPException(status_code=503, detail="Model not loaded yet")
 
     try:
-        image = load_image(request.image_path)
+        env = os.environ.copy()
+        env["PATH"] = f"{MLX_BIN_PATH}:{env.get('PATH', '')}"
 
-        result = generate(
-            model=model,
-            processor=processor,
-            prompt=request.prompt,
-            image=image,
-            max_tokens=MAX_TOKENS,
+        result = subprocess.run(
+            [
+                "mlx_vlm.generate",
+                "--model",
+                MODEL_NAME,
+                "--prompt",
+                request.prompt,
+                "--image",
+                request.image_path,
+                "--max-tokens",
+                str(MAX_TOKENS),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
         )
 
-        raw_response = result.strip()
+        if result.returncode != 0:
+            return ExtractResponse(
+                success=False, error=result.stderr or "MLX command failed"
+            )
+
+        raw_response = result.stdout.strip()
 
         return ExtractResponse(
             success=True,
             raw_response=raw_response,
         )
 
-    except Exception as e:
+    except subprocess.TimeoutExpired:
         return ExtractResponse(
-            success=False,
-            error=str(e),
+            success=False, error="AI extraction timed out after 300 seconds"
         )
+    except Exception as e:
+        return ExtractResponse(success=False, error=str(e))
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "model": MODEL_NAME, "loaded": model is not None}
+    return {"status": "healthy", "model": MODEL_NAME, "loaded": True}
 
 
 if __name__ == "__main__":
