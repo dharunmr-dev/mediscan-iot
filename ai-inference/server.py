@@ -1,11 +1,14 @@
+import base64
 import os
 import subprocess
+import tempfile
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 
 class ExtractRequest(BaseModel):
-    image_path: str
+    image_data: str
+    filename: str
     prompt: str
 
 
@@ -32,12 +35,17 @@ app = FastAPI(
 
 @app.post("/extract", response_model=ExtractResponse)
 async def extract_prescription(request: ExtractRequest):
-    if not os.path.exists(request.image_path):
-        return ExtractResponse(
-            success=False, error=f"Image not found: {request.image_path}"
-        )
+    temp_file_path = None
 
     try:
+        image_bytes = base64.b64decode(request.image_data)
+
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=request.filename
+        ) as temp_file:
+            temp_file.write(image_bytes)
+            temp_file_path = temp_file.name
+
         env = os.environ.copy()
         env["PATH"] = f"{MLX_BIN_PATH}:{env.get('PATH', '')}"
 
@@ -49,7 +57,7 @@ async def extract_prescription(request: ExtractRequest):
                 "--prompt",
                 request.prompt,
                 "--image",
-                request.image_path,
+                temp_file_path,
                 "--max-tokens",
                 str(MAX_TOKENS),
             ],
@@ -77,6 +85,9 @@ async def extract_prescription(request: ExtractRequest):
         )
     except Exception as e:
         return ExtractResponse(success=False, error=str(e))
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
 
 @app.get("/health")

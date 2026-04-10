@@ -1,4 +1,5 @@
 import aiohttp
+import base64
 import json
 import os
 from typing import Optional
@@ -38,10 +39,15 @@ async def extract_prescription(
         raise FileNotFoundError(f"Image not found: {image_path}")
 
     try:
+        with open(image_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode("utf-8")
+
+        filename = os.path.basename(image_path)
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{settings.ai_server_url}/extract",
-                json={"image_path": image_path, "prompt": PROMPT},
+                json={"image_data": image_data, "filename": filename, "prompt": PROMPT},
                 timeout=aiohttp.ClientTimeout(total=settings.ai_timeout),
             ) as response:
                 if response.status != 200:
