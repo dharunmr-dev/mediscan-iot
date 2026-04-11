@@ -243,4 +243,14 @@ async def save_extracted_prescription(
         diagnosed_by=extraction_result.get("doctor"),
     )
 
-    return await database.create_prescription(prescription)
+    created_prescription = await database.create_prescription(prescription)
+
+    patient = await database.get_patient(final_patient_id)
+    if patient:
+        created_prescription.patient_name = patient.name
+        created_prescription.patient_age = patient.age
+        created_prescription.patient_gender = (
+            patient.gender.value if patient.gender else None
+        )
+
+    return created_prescription
