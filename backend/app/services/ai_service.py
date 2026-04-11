@@ -125,9 +125,20 @@ async def extract_prescription(
                     ]
                     instructions = ", ".join([i for i in instructions_list if i])
 
+                    # Extract just the JSON portion from raw response
+                    extracted_text = raw_output
+                    if "```json" in raw_output:
+                        extracted_text = (
+                            raw_output.split("```json")[1].split("```")[0].strip()
+                        )
+                    elif "```" in raw_output:
+                        extracted_text = (
+                            raw_output.split("```")[1].split("```")[0].strip()
+                        )
+
                     return {
                         "success": True,
-                        "extracted_text": raw_output,
+                        "extracted_text": extracted_text,
                         "patient_name": patient_name,
                         "patient_age": patient_age,
                         "patient_gender": patient_gender,
